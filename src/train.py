@@ -66,7 +66,6 @@ def train():
         model=model,
         train_dataset=dataset["train"],
         peft_config=peft_config,
-        dataset_text_field="text",
         tokenizer=tokenizer,
         args=training_args,
         max_seq_length=MAX_SEQ_LENGTH
