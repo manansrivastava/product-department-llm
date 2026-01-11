@@ -1,48 +1,37 @@
 
-
 import torch
-from transformers import (
-    AutoTokenizer,
-    AutoModelForCausalLM,
-    BitsAndBytesConfig,
-    TrainingArguments,
-)
+from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
 from trl import SFTTrainer
 from peft import LoraConfig
 from prepare_data import load_and_prepare_data
 
-
 MODEL_NAME = "ybelkada/falcon-7b-sharded-bf16"
 OUTPUT_DIR = "results"
 
+PER_DEVICE_BATCH_SIZE = 2
+GRADIENT_ACCUMULATION_STEPS = 8
+MAX_SEQ_LENGTH = 512
+MAX_STEPS = 120
+LEARNING_RATE = 2e-4
+
 
 def train():
-    # Load dataset
     dataset, _, _ = load_and_prepare_data()
 
-
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-    )
-
-    # Load model
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
-        quantization_config=bnb_config,
-        trust_remote_code=True,
-        device_map="auto",
-    )
-    model.config.use_cache = False
-
-    # Tokenizer
     tokenizer = AutoTokenizer.from_pretrained(
-        MODEL_NAME, trust_remote_code=True
+        MODEL_NAME,
+        trust_remote_code=True
     )
     tokenizer.pad_token = tokenizer.eos_token
 
-    # LoRA config
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_NAME,
+        trust_remote_code=True,
+        device_map="auto",
+        torch_dtype=torch.float16,
+    )
+    model.config.use_cache = False
+
     peft_config = LoraConfig(
         r=64,
         lora_alpha=16,
@@ -57,40 +46,7 @@ def train():
         ],
     )
 
-    # Training arguments
     training_args = TrainingArguments(
         output_dir=OUTPUT_DIR,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=4,
-        optim="paged_adamw_32bit",
-        save_steps=10,
-        logging_steps=1,
-        learning_rate=2e-4,
-        fp16=True,
-        max_steps=120,
-        warmup_ratio=0.03,
-        lr_scheduler_type="constant",
-        group_by_length=True,
-    )
-
-    # Trainer
-    trainer = SFTTrainer(
-        model=model,
-        train_dataset=dataset["train"],
-        peft_config=peft_config,
-        dataset_text_field="text",
-        tokenizer=tokenizer,
-        args=training_args,
-        max_seq_length=512,
-    )
-
-    # FP32 norm fix
-    for name, module in trainer.model.named_modules():
-        if "norm" in name:
-            module.to(torch.float32)
-
-    trainer.train()
-
-
-if __name__ == "__main__":
-    train()
+        per_device_train_batch_size=PER_DEVICE_BATCH_SIZE,
+        gradien
